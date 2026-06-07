@@ -1,4 +1,5 @@
 import {
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -8,8 +9,15 @@ import {
 
 import type { RobotExpression } from "../types/robotEvents";
 
+export type LowerPanelContent =
+  | { mode: "empty" }
+  | { mode: "text"; text: string }
+  | { mode: "loading_image" }
+  | { mode: "image"; imageUrl: string }
+  | { mode: "error"; message: string };
+
 type LowerPanelProps = {
-  assistantText: string;
+  content: LowerPanelContent;
   expression: RobotExpression;
   healthLabel: string;
   healthStatus: "checking" | "online" | "offline";
@@ -18,12 +26,14 @@ type LowerPanelProps = {
   onChangeInput: (value: string) => void;
   onInputBlur: () => void;
   onInputFocus: () => void;
+  onImageError?: () => void;
   onRefreshHealth: () => void;
   onSend: () => void;
+  showHealthLabel: boolean;
 };
 
 export function LowerPanel({
-  assistantText,
+  content,
   expression,
   healthLabel,
   healthStatus,
@@ -32,8 +42,10 @@ export function LowerPanel({
   onChangeInput,
   onInputBlur,
   onInputFocus,
+  onImageError,
   onRefreshHealth,
   onSend,
+  showHealthLabel,
 }: LowerPanelProps) {
   const canSend = inputText.trim().length > 0 && !isSending;
 
@@ -41,18 +53,24 @@ export function LowerPanel({
     <View style={styles.panel}>
       <View style={styles.statusRow}>
         <Pressable
+          accessibilityLabel={healthLabel}
           accessibilityRole="button"
           onPress={onRefreshHealth}
           style={styles.statusButton}
         >
           <View style={[styles.statusDot, statusDotStyle[healthStatus]]} />
-          <Text style={styles.statusText}>{healthLabel}</Text>
+          {showHealthLabel ? <Text style={styles.statusText}>{healthLabel}</Text> : null}
         </Pressable>
         <Text style={styles.expressionText}>{expression}</Text>
       </View>
 
-      <View style={styles.messageBox}>
-        <Text style={styles.assistantText}>{assistantText}</Text>
+      <View
+        style={[
+          styles.contentBox,
+          content.mode === "image" ? styles.imageContentBox : null,
+        ]}
+      >
+        {renderContent(content, onImageError)}
       </View>
 
       <View style={styles.inputRow}>
@@ -87,10 +105,44 @@ export function LowerPanel({
   );
 }
 
+function renderContent(content: LowerPanelContent, onImageError?: () => void) {
+  switch (content.mode) {
+    case "empty":
+      return null;
+    case "loading_image":
+      return (
+        <View style={styles.loadingImageBox}>
+          <View style={styles.loaderGrid} accessibilityLabel="Montando a imagem">
+            <View style={[styles.loaderTile, styles.loaderTilePrimary]} />
+            <View style={[styles.loaderTile, styles.loaderTileMuted]} />
+            <View style={[styles.loaderTile, styles.loaderTileMuted]} />
+            <View style={[styles.loaderTile, styles.loaderTilePrimary]} />
+          </View>
+          <Text style={styles.loadingImageText}>Montando a imagem...</Text>
+        </View>
+      );
+    case "image":
+      return (
+        <Image
+          accessibilityLabel="Imagem gerada pelo Cubinho"
+          onError={onImageError}
+          resizeMode="cover"
+          source={{ uri: content.imageUrl }}
+          style={styles.generatedImage}
+        />
+      );
+    case "error":
+      return <Text style={styles.errorText}>{content.message}</Text>;
+    case "text":
+    default:
+      return <Text style={styles.assistantText}>{content.text}</Text>;
+  }
+}
+
 const statusDotStyle = {
-  checking: { backgroundColor: "#f3d779" },
-  online: { backgroundColor: "#73e6a2" },
-  offline: { backgroundColor: "#ff7d7d" },
+  checking: { backgroundColor: "#f6c945" },
+  online: { backgroundColor: "#30d158" },
+  offline: { backgroundColor: "#ff453a" },
 };
 
 const styles = StyleSheet.create({
@@ -117,9 +169,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
   },
   statusText: {
     color: "#d9f6ff",
@@ -130,17 +182,61 @@ const styles = StyleSheet.create({
     color: "#9db5c4",
     fontSize: 13,
   },
-  messageBox: {
-    minHeight: 78,
+  contentBox: {
+    minHeight: 96,
     borderRadius: 8,
     backgroundColor: "#06151f",
     justifyContent: "center",
     padding: 14,
   },
+  imageContentBox: {
+    minHeight: 190,
+    padding: 8,
+  },
   assistantText: {
     color: "#f5fbff",
     fontSize: 18,
     lineHeight: 25,
+  },
+  loadingImageBox: {
+    minHeight: 118,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+  },
+  loaderGrid: {
+    width: 58,
+    height: 58,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  loaderTile: {
+    width: 26,
+    height: 26,
+    borderRadius: 6,
+  },
+  loaderTilePrimary: {
+    backgroundColor: "#73e6a2",
+  },
+  loaderTileMuted: {
+    backgroundColor: "#24475a",
+  },
+  loadingImageText: {
+    color: "#d9f6ff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  generatedImage: {
+    width: "100%",
+    height: 176,
+    borderRadius: 8,
+    backgroundColor: "#102838",
+  },
+  errorText: {
+    color: "#ffd4d4",
+    fontSize: 17,
+    lineHeight: 24,
   },
   inputRow: {
     minHeight: 52,

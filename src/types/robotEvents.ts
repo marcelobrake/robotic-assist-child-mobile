@@ -23,6 +23,16 @@ export type TextInteractionRequest = {
   };
 };
 
+export type TextInteractionImage = {
+  image_id: string;
+  image_url: string;
+  content_type: string;
+  provider: string;
+  model: string;
+  created_at: string;
+  expires_at?: string | null;
+};
+
 export type TextInteractionResponse = {
   interaction_id: string;
   session_id: string;
@@ -30,6 +40,7 @@ export type TextInteractionResponse = {
   assistant_text: string;
   expression: RobotExpression;
   intent: string;
+  image: TextInteractionImage | null;
   created_at: string;
 };
 

@@ -1,6 +1,7 @@
 import type {
   HealthResponse,
   RobotExpression,
+  TextInteractionImage,
   TextInteractionRequest,
   TextInteractionResponse,
 } from "../types/robotEvents";
@@ -22,6 +23,38 @@ function normalizeExpression(value: unknown): RobotExpression {
     "error",
   ];
   return allowed.includes(value as RobotExpression) ? (value as RobotExpression) : "happy";
+}
+
+function readString(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+function parseTextInteractionImage(
+  value: unknown,
+  fallbackCreatedAt: string
+): TextInteractionImage | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const image = value as Record<string, unknown>;
+  const imageUrl = readString(image.image_url);
+  if (!imageUrl) {
+    return null;
+  }
+
+  return {
+    image_id: readString(image.image_id),
+    image_url: imageUrl,
+    content_type: readString(image.content_type, "image/*"),
+    provider: readString(image.provider),
+    model: readString(image.model),
+    created_at: readString(image.created_at, fallbackCreatedAt),
+    expires_at:
+      typeof image.expires_at === "string" || image.expires_at === null
+        ? image.expires_at
+        : undefined,
+  };
 }
 
 async function parseJson<T>(response: Response): Promise<T> {
@@ -66,6 +99,9 @@ export async function sendTextInteraction(
       : typeof body.response_text === "string"
         ? body.response_text
         : "Recebi sua mensagem.";
+  const createdAt =
+    typeof body.created_at === "string" ? body.created_at : new Date().toISOString();
+  const image = parseTextInteractionImage(body.image, createdAt);
 
   return {
     interaction_id:
@@ -76,6 +112,7 @@ export async function sendTextInteraction(
     assistant_text: assistantText,
     expression: normalizeExpression(body.expression),
     intent: typeof body.intent === "string" ? body.intent : "chat",
-    created_at: typeof body.created_at === "string" ? body.created_at : new Date().toISOString(),
+    image,
+    created_at: createdAt,
   };
 }
