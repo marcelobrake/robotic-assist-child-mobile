@@ -1,7 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Animated, StyleSheet } from "react-native";
 
 import type { RobotExpression } from "../types/robotEvents";
+import { randomThinkingColor } from "./robotPalette";
 
 type RobotMouthProps = {
   expression: RobotExpression;
@@ -16,6 +17,10 @@ export function RobotMouth({
 }: RobotMouthProps) {
   const animatedOpenLevel = useRef(new Animated.Value(0)).current;
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [thinkingColor, setThinkingColor] = useState<string | null>(null);
+
+  const isThinking = expression === "thinking";
+  const isAnimating = is_speaking || isThinking;
 
   useEffect(() => {
     let active = true;
@@ -27,7 +32,7 @@ export function RobotMouth({
       }
     };
 
-    if (!is_speaking) {
+    if (!isAnimating) {
       clearAnimationTimeout();
       animatedOpenLevel.stopAnimation();
       animatedOpenLevel.setValue(0);
@@ -36,20 +41,25 @@ export function RobotMouth({
 
     const animate = () => {
       const nextLevel =
-        typeof mouth_open_level === "number"
+        !isThinking && typeof mouth_open_level === "number"
           ? clampMouthOpenLevel(mouth_open_level)
-          : 0.25 + Math.random() * 0.75;
+          : 0.2 + Math.random() * 0.8;
 
       Animated.timing(animatedOpenLevel, {
         toValue: nextLevel,
-        duration: 80 + Math.floor(Math.random() * 90),
+        duration: isThinking
+          ? 90 + Math.floor(Math.random() * 80)
+          : 80 + Math.floor(Math.random() * 90),
         useNativeDriver: false,
       }).start(() => {
         if (!active) {
           return;
         }
 
-        timeoutRef.current = setTimeout(animate, 35 + Math.floor(Math.random() * 70));
+        timeoutRef.current = setTimeout(
+          animate,
+          isThinking ? 60 + Math.floor(Math.random() * 120) : 35 + Math.floor(Math.random() * 70)
+        );
       });
     };
 
@@ -60,10 +70,24 @@ export function RobotMouth({
       clearAnimationTimeout();
       animatedOpenLevel.stopAnimation();
     };
-  }, [animatedOpenLevel, is_speaking, mouth_open_level]);
+  }, [animatedOpenLevel, isAnimating, isThinking, mouth_open_level]);
+
+  useEffect(() => {
+    if (!isThinking) {
+      setThinkingColor(null);
+      return;
+    }
+
+    setThinkingColor(randomThinkingColor());
+    const intervalId = setInterval(() => {
+      setThinkingColor(randomThinkingColor());
+    }, 200);
+
+    return () => clearInterval(intervalId);
+  }, [isThinking]);
 
   const mouthStyle = mouthStyleByExpression[expression];
-  const speakingHeight = animatedOpenLevel.interpolate({
+  const animatedHeight = animatedOpenLevel.interpolate({
     inputRange: [0, 1],
     outputRange: [12, 54],
   });
@@ -73,10 +97,10 @@ export function RobotMouth({
       style={[
         styles.mouth,
         {
-          backgroundColor: mouthStyle.backgroundColor,
-          borderRadius: is_speaking ? 18 : mouthStyle.borderRadius,
-          height: is_speaking ? speakingHeight : mouthStyle.height,
-          width: is_speaking ? Math.max(mouthStyle.width, 82) : mouthStyle.width,
+          backgroundColor: thinkingColor ?? mouthStyle.backgroundColor,
+          borderRadius: isAnimating ? 18 : mouthStyle.borderRadius,
+          height: isAnimating ? animatedHeight : mouthStyle.height,
+          width: isAnimating ? Math.max(mouthStyle.width, 82) : mouthStyle.width,
         },
       ]}
     />

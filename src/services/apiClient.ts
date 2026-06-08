@@ -132,6 +132,7 @@ export function parseInteractionResponse(
     session_id:
       typeof body.session_id === "string" ? body.session_id : fallbackSessionId,
     status: typeof body.status === "string" ? body.status : "accepted",
+    input_text: typeof body.input_text === "string" ? body.input_text : "",
     assistant_text: assistantText,
     expression: normalizeExpression(body.expression),
     intent: typeof body.intent === "string" ? body.intent : "chat",

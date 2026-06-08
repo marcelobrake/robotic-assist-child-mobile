@@ -19,6 +19,18 @@ type AudioInteractionRequest = {
   session_id: string;
 };
 
+export class AudioInteractionError extends Error {
+  readonly detail?: string;
+  readonly status: number;
+
+  constructor(status: number, detail?: string) {
+    super(`Audio interaction failed with status ${status}${detail ? `: ${detail}` : ""}`);
+    this.name = "AudioInteractionError";
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
 async function appendAudioFile(
   formData: FormData,
   audioUri: string,
@@ -46,8 +58,7 @@ async function appendAudioFile(
   );
 }
 
-async function parseResponseBody(response: Response): Promise<Record<string, unknown>> {
-  const rawBody = await response.text();
+function parseRawResponseBody(rawBody: string): Record<string, unknown> {
   if (!rawBody) {
     return {};
   }
@@ -57,6 +68,41 @@ async function parseResponseBody(response: Response): Promise<Record<string, unk
   } catch {
     return { detail: rawBody };
   }
+}
+
+async function uploadFormData(
+  url: string,
+  formData: FormData
+): Promise<{ body: Record<string, unknown>; ok: boolean; status: number }> {
+  if (Platform.OS === "web") {
+    const response = await fetch(url, {
+      method: "POST",
+      body: formData,
+    });
+
+    return {
+      body: parseRawResponseBody(await response.text()),
+      ok: response.ok,
+      status: response.status,
+    };
+  }
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.setRequestHeader("Accept", "application/json");
+    xhr.onload = () => {
+      resolve({
+        body: parseRawResponseBody(xhr.responseText),
+        ok: xhr.status >= 200 && xhr.status < 300,
+        status: xhr.status,
+      });
+    };
+    xhr.onerror = () => reject(new Error("Audio upload network request failed"));
+    xhr.ontimeout = () => reject(new Error("Audio upload request timed out"));
+    xhr.timeout = 60000;
+    xhr.send(formData);
+  });
 }
 
 export async function sendAudioInteraction(
@@ -76,17 +122,16 @@ export async function sendAudioInteraction(
     request.audio_file_extension
   );
 
-  const response = await fetch(`${getApiBaseUrl()}/v1/interactions/audio`, {
-    method: "POST",
-    body: formData,
-  });
-  const body = await parseResponseBody(response);
+  const response = await uploadFormData(
+    `${getApiBaseUrl()}/v1/interactions/audio`,
+    formData
+  );
 
   if (!response.ok) {
     const detail =
-      typeof body.detail === "string" ? `: ${body.detail}` : "";
-    throw new Error(`Audio interaction failed with status ${response.status}${detail}`);
+      typeof response.body.detail === "string" ? response.body.detail : undefined;
+    throw new AudioInteractionError(response.status, detail);
   }
 
-  return parseInteractionResponse(body, request.session_id);
+  return parseInteractionResponse(response.body, request.session_id);
 }

@@ -49,6 +49,7 @@ export type TextInteractionResponse = {
   interaction_id: string;
   session_id: string;
   status: string;
+  input_text: string;
   assistant_text: string;
   expression: RobotExpression;
   intent: string;

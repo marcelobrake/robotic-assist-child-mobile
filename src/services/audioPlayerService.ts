@@ -1,5 +1,7 @@
 import { createAudioPlayer, setAudioModeAsync } from "expo-audio";
 
+const PLAYBACK_RATE = 1.1;
+
 export type AudioPlaybackState = "playing" | "stopped" | "error";
 
 type AudioPlaybackStateListener = (state: AudioPlaybackState) => void;
@@ -80,6 +82,8 @@ export const audioPlayerService = {
       });
 
       currentPlayer = player;
+      player.shouldCorrectPitch = true;
+      player.setPlaybackRate(PLAYBACK_RATE, "high");
       currentSubscription = player.addListener("playbackStatusUpdate", (status) => {
         if (status.error) {
           console.warn("Audio playback failed:", status.error);

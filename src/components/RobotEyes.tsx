@@ -1,31 +1,69 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Animated, StyleSheet, View } from "react-native";
 
 import type { RobotExpression } from "../types/robotEvents";
+import { randomThinkingColor } from "./robotPalette";
 
 type RobotEyesProps = {
   expression: RobotExpression;
 };
 
 export function RobotEyes({ expression }: RobotEyesProps) {
-  const blinkScale = useRef(new Animated.Value(1)).current;
+  const leftBlink = useRef(new Animated.Value(1)).current;
+  const rightBlink = useRef(new Animated.Value(1)).current;
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [thinkingColor, setThinkingColor] = useState<string | null>(null);
+
+  const isThinking = expression === "thinking";
 
   useEffect(() => {
     let active = true;
 
+    const clearTimer = () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
+
+    const winkEye = (value: Animated.Value, onDone: () => void) => {
+      Animated.sequence([
+        Animated.timing(value, { toValue: 0.08, duration: 70, useNativeDriver: true }),
+        Animated.timing(value, { toValue: 1, duration: 90, useNativeDriver: true }),
+      ]).start(() => {
+        if (active) {
+          onDone();
+        }
+      });
+    };
+
+    if (isThinking) {
+      let useLeft = true;
+
+      const winkLoop = () => {
+        const target = useLeft ? leftBlink : rightBlink;
+        useLeft = !useLeft;
+        winkEye(target, () => {
+          timeoutRef.current = setTimeout(winkLoop, 110 + Math.floor(Math.random() * 130));
+        });
+      };
+
+      winkLoop();
+
+      return () => {
+        active = false;
+        clearTimer();
+        leftBlink.stopAnimation();
+        leftBlink.setValue(1);
+        rightBlink.stopAnimation();
+        rightBlink.setValue(1);
+      };
+    }
+
     const blink = () => {
       Animated.sequence([
-        Animated.timing(blinkScale, {
-          toValue: 0.08,
-          duration: 85,
-          useNativeDriver: true,
-        }),
-        Animated.timing(blinkScale, {
-          toValue: 1,
-          duration: 115,
-          useNativeDriver: true,
-        }),
+        Animated.timing(leftBlink, { toValue: 0.08, duration: 85, useNativeDriver: true }),
+        Animated.timing(leftBlink, { toValue: 1, duration: 115, useNativeDriver: true }),
       ]).start(() => {
         if (!active) {
           return;
@@ -35,28 +73,46 @@ export function RobotEyes({ expression }: RobotEyesProps) {
       });
     };
 
+    rightBlink.setValue(1);
     timeoutRef.current = setTimeout(blink, 900 + Math.floor(Math.random() * 1800));
 
     return () => {
       active = false;
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-      blinkScale.stopAnimation();
+      clearTimer();
+      leftBlink.stopAnimation();
+      rightBlink.stopAnimation();
     };
-  }, [blinkScale]);
+  }, [isThinking, leftBlink, rightBlink]);
+
+  useEffect(() => {
+    if (!isThinking) {
+      setThinkingColor(null);
+      return;
+    }
+
+    setThinkingColor(randomThinkingColor());
+    const intervalId = setInterval(() => {
+      setThinkingColor(randomThinkingColor());
+    }, 180);
+
+    return () => clearInterval(intervalId);
+  }, [isThinking]);
 
   const eyeStyle = eyeStyleByExpression[expression];
+  const colorOverride = thinkingColor ? { backgroundColor: thinkingColor } : null;
 
   return (
     <View style={styles.row}>
-      <Animated.View style={[styles.eye, eyeStyle, { transform: [{ scaleY: blinkScale }] }]} />
+      <Animated.View
+        style={[styles.eye, eyeStyle, colorOverride, { transform: [{ scaleY: leftBlink }] }]}
+      />
       <Animated.View
         style={[
           styles.eye,
           eyeStyle,
           expression === "confused" ? styles.confusedEye : null,
-          { transform: [{ scaleY: blinkScale }] },
+          colorOverride,
+          { transform: [{ scaleY: isThinking ? rightBlink : leftBlink }] },
         ]}
       />
     </View>

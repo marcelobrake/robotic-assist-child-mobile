@@ -1,8 +1,10 @@
+import { useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
 
 import type { RobotExpression } from "../types/robotEvents";
 import { RobotEyes } from "./RobotEyes";
 import { RobotMouth } from "./RobotMouth";
+import { randomThinkingColor } from "./robotPalette";
 
 type RobotFaceProps = {
   expression: RobotExpression;
@@ -15,8 +17,31 @@ export function RobotFace({
   is_speaking = false,
   mouth_open_level,
 }: RobotFaceProps) {
+  const isThinking = expression === "thinking";
+  const [thinkingBorder, setThinkingBorder] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isThinking) {
+      setThinkingBorder(null);
+      return;
+    }
+
+    setThinkingBorder(randomThinkingColor());
+    const intervalId = setInterval(() => {
+      setThinkingBorder(randomThinkingColor());
+    }, 160);
+
+    return () => clearInterval(intervalId);
+  }, [isThinking]);
+
   return (
-    <View style={[styles.shell, shellStyleByExpression[expression]]}>
+    <View
+      style={[
+        styles.shell,
+        shellStyleByExpression[expression],
+        thinkingBorder ? { borderColor: thinkingBorder } : null,
+      ]}
+    >
       <View style={styles.screen}>
         <RobotEyes expression={expression} />
         <RobotMouth

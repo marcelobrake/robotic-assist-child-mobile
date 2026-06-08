@@ -1,12 +1,4 @@
-import {
-  Image,
-  Pressable,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 
 export type LowerPanelContent =
   | { mode: "empty" }
@@ -19,20 +11,15 @@ type LowerPanelProps = {
   content: LowerPanelContent;
   healthLabel: string;
   healthStatus: "checking" | "online" | "offline";
-  inputText: string;
-  isSending: boolean;
   isVoiceBusy: boolean;
   isVoiceRecording: boolean;
-  isListenerModeEnabled: boolean;
   interactionState: string;
-  onChangeInput: (value: string) => void;
-  onInputBlur: () => void;
-  onInputFocus: () => void;
   onImageError?: () => void;
+  onOpenHistory: () => void;
   onRefreshHealth: () => void;
-  onSend: () => void;
-  onToggleListenerMode: (value: boolean) => void;
+  onToggleContent: () => void;
   onVoicePress: () => void;
+  showContent: boolean;
   showHealthLabel: boolean;
 };
 
@@ -40,24 +27,21 @@ export function LowerPanel({
   content,
   healthLabel,
   healthStatus,
-  inputText,
-  isSending,
   isVoiceBusy,
   isVoiceRecording,
-  isListenerModeEnabled,
   interactionState,
-  onChangeInput,
-  onInputBlur,
-  onInputFocus,
   onImageError,
+  onOpenHistory,
   onRefreshHealth,
-  onSend,
-  onToggleListenerMode,
+  onToggleContent,
   onVoicePress,
+  showContent,
   showHealthLabel,
 }: LowerPanelProps) {
-  const canSend = inputText.trim().length > 0 && !isSending;
-  const voiceButtonLabel = isVoiceRecording ? "Parar" : "Falar";
+  const isVoiceDisabled = isVoiceBusy && !isVoiceRecording;
+  const voiceAccessibilityLabel = isVoiceRecording
+    ? "Parar gravação"
+    : "Falar com o Cubinho";
 
   return (
     <View style={styles.panel}>
@@ -71,80 +55,75 @@ export function LowerPanel({
           <View style={[styles.statusDot, statusDotStyle[healthStatus]]} />
           {showHealthLabel ? <Text style={styles.statusText}>{healthLabel}</Text> : null}
         </Pressable>
-        <Text style={styles.expressionText}>{interactionState}</Text>
-      </View>
-
-      <View
-        style={[
-          styles.contentBox,
-          content.mode === "image" ? styles.imageContentBox : null,
-        ]}
-      >
-        {renderContent(content, onImageError)}
-      </View>
-
-      <View style={styles.voiceControlsRow}>
-        <View style={styles.listenerModeControl}>
-          <Text style={styles.listenerModeText}>Modo ouvinte</Text>
-          <Switch
-            accessibilityLabel="Modo ouvinte"
-            onValueChange={onToggleListenerMode}
-            thumbColor={isListenerModeEnabled ? "#30d158" : "#d9f6ff"}
-            trackColor={{ false: "#24475a", true: "#1f7f42" }}
-            value={isListenerModeEnabled}
-          />
+        <View style={styles.statusRight}>
+          <Text style={styles.expressionText}>{interactionState}</Text>
+          <Pressable
+            accessibilityLabel={
+              showContent ? "Ocultar respostas e imagens" : "Mostrar respostas e imagens"
+            }
+            accessibilityRole="button"
+            onPress={onToggleContent}
+            style={({ pressed }) => [styles.toggleButton, pressed ? styles.toggleButtonPressed : null]}
+          >
+            <Text style={styles.toggleText}>{showContent ? "Ocultar" : "Mostrar"}</Text>
+          </Pressable>
         </View>
+      </View>
+
+      {showContent ? (
         <Pressable
+          accessibilityHint="Toque para ver as últimas interações desta sessão"
           accessibilityRole="button"
-          disabled={isVoiceBusy && !isVoiceRecording}
+          onPress={onOpenHistory}
+          style={({ pressed }) => [
+            styles.contentBox,
+            content.mode === "image" ? styles.imageContentBox : null,
+            pressed ? styles.contentBoxPressed : null,
+          ]}
+        >
+          {renderContent(content, onImageError)}
+        </Pressable>
+      ) : null}
+
+      <View style={styles.voiceArea}>
+        <Pressable
+          accessibilityLabel={voiceAccessibilityLabel}
+          accessibilityRole="button"
+          disabled={isVoiceDisabled}
           onPress={onVoicePress}
           style={({ pressed }) => [
             styles.voiceButton,
             isVoiceRecording ? styles.voiceButtonRecording : null,
-            isVoiceBusy && !isVoiceRecording ? styles.voiceButtonDisabled : null,
+            isVoiceDisabled ? styles.voiceButtonDisabled : null,
             pressed ? styles.voiceButtonPressed : null,
           ]}
         >
-          <Text style={styles.voiceButtonText}>{voiceButtonLabel}</Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.inputRow}>
-        <TextInput
-          accessibilityLabel="Mensagem para o Cubinho"
-          autoCapitalize="sentences"
-          editable={!isSending && !isVoiceBusy}
-          onBlur={onInputBlur}
-          onChangeText={onChangeInput}
-          onFocus={onInputFocus}
-          onSubmitEditing={onSend}
-          placeholder="Fale com o Cubinho"
-          placeholderTextColor="#7d96a6"
-          returnKeyType="send"
-          style={styles.input}
-          value={inputText}
-        />
-        <Pressable
-          accessibilityRole="button"
-          disabled={!canSend}
-          onPress={onSend}
-          style={({ pressed }) => [
-            styles.sendButton,
-            !canSend ? styles.sendButtonDisabled : null,
-            pressed && canSend ? styles.sendButtonPressed : null,
-          ]}
-        >
-          <Text style={styles.sendButtonText}>{isSending ? "..." : "Enviar"}</Text>
+          {isVoiceRecording ? <RecordingGlyph /> : <MicGlyph />}
         </Pressable>
       </View>
     </View>
   );
 }
 
+function MicGlyph() {
+  return (
+    <View accessibilityElementsHidden style={micStyles.container}>
+      <View style={micStyles.body} />
+      <View style={micStyles.cradle} />
+      <View style={micStyles.neck} />
+      <View style={micStyles.base} />
+    </View>
+  );
+}
+
+function RecordingGlyph() {
+  return <View accessibilityElementsHidden style={micStyles.recordingSquare} />;
+}
+
 function renderContent(content: LowerPanelContent, onImageError?: () => void) {
   switch (content.mode) {
     case "empty":
-      return null;
+      return <Text style={styles.placeholderText}>Toque aqui para ver a conversa.</Text>;
     case "loading_image":
       return (
         <View style={styles.loadingImageBox}>
@@ -190,7 +169,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingTop: 16,
     paddingBottom: 18,
-    gap: 14,
+    gap: 18,
   },
   statusRow: {
     flexDirection: "row",
@@ -214,9 +193,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
   },
+  statusRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
   expressionText: {
     color: "#9db5c4",
     fontSize: 13,
+  },
+  toggleButton: {
+    minHeight: 32,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: "#1b3b4d",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  toggleButtonPressed: {
+    opacity: 0.82,
+  },
+  toggleText: {
+    color: "#d9f6ff",
+    fontSize: 13,
+    fontWeight: "700",
   },
   contentBox: {
     minHeight: 96,
@@ -225,9 +225,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 14,
   },
+  contentBoxPressed: {
+    opacity: 0.85,
+  },
   imageContentBox: {
     minHeight: 190,
     padding: 8,
+  },
+  placeholderText: {
+    color: "#7d96a6",
+    fontSize: 16,
   },
   assistantText: {
     color: "#f5fbff",
@@ -274,38 +281,23 @@ const styles = StyleSheet.create({
     fontSize: 17,
     lineHeight: 24,
   },
-  voiceControlsRow: {
-    minHeight: 44,
-    flexDirection: "row",
+  voiceArea: {
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-  },
-  listenerModeControl: {
-    flex: 1,
-    minHeight: 44,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#24475a",
-    backgroundColor: "#06151f",
-    paddingHorizontal: 12,
-  },
-  listenerModeText: {
-    color: "#d9f6ff",
-    fontSize: 15,
-    fontWeight: "600",
+    justifyContent: "center",
+    paddingTop: 4,
   },
   voiceButton: {
-    width: 82,
-    minHeight: 44,
-    borderRadius: 8,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     backgroundColor: "#8bd8ff",
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: "#000000",
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
   },
   voiceButtonRecording: {
     backgroundColor: "#ff453a",
@@ -316,43 +308,46 @@ const styles = StyleSheet.create({
   voiceButtonPressed: {
     opacity: 0.82,
   },
-  voiceButtonText: {
-    color: "#06151f",
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  inputRow: {
-    minHeight: 52,
-    flexDirection: "row",
-    alignItems: "stretch",
-    gap: 10,
-  },
-  input: {
-    flex: 1,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#24475a",
-    backgroundColor: "#06151f",
-    color: "#ffffff",
-    fontSize: 16,
-    paddingHorizontal: 14,
-  },
-  sendButton: {
-    width: 96,
-    borderRadius: 8,
-    backgroundColor: "#73e6a2",
+});
+
+const micStyles = StyleSheet.create({
+  container: {
+    width: 40,
+    height: 56,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "flex-start",
   },
-  sendButtonDisabled: {
-    backgroundColor: "#315263",
+  body: {
+    width: 18,
+    height: 30,
+    borderRadius: 9,
+    backgroundColor: "#06151f",
   },
-  sendButtonPressed: {
-    opacity: 0.82,
+  cradle: {
+    width: 30,
+    height: 15,
+    borderWidth: 3,
+    borderTopWidth: 0,
+    borderColor: "#06151f",
+    borderBottomLeftRadius: 15,
+    borderBottomRightRadius: 15,
+    marginTop: -8,
   },
-  sendButtonText: {
-    color: "#06151f",
-    fontSize: 16,
-    fontWeight: "700",
+  neck: {
+    width: 3,
+    height: 7,
+    backgroundColor: "#06151f",
+  },
+  base: {
+    width: 18,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: "#06151f",
+  },
+  recordingSquare: {
+    width: 30,
+    height: 30,
+    borderRadius: 6,
+    backgroundColor: "#ffffff",
   },
 });

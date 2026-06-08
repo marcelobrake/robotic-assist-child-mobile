@@ -1,19 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  KeyboardAvoidingView,
-  Platform,
-  StatusBar,
-  StyleSheet,
-  View,
-} from "react-native";
+import { StatusBar, StyleSheet, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
+import {
+  InteractionHistory,
+  type InteractionHistoryItem,
+} from "../components/InteractionHistory";
 import { LowerPanel, type LowerPanelContent } from "../components/LowerPanel";
 import { RobotFace } from "../components/RobotFace";
-import { checkHealth, sendTextInteraction } from "../services/apiClient";
+import { checkHealth } from "../services/apiClient";
 import { audioPlayerService } from "../services/audioPlayerService";
 import { audioRecorderService } from "../services/audioRecorderService";
-import { sendAudioInteraction } from "../services/interactionAudioService";
+import {
+  AudioInteractionError,
+  sendAudioInteraction,
+} from "../services/interactionAudioService";
 import { voiceActivityService, type VoiceActivityEvent } from "../services/voiceActivityService";
 import type { RobotExpression, TextInteractionResponse } from "../types/robotEvents";
 
@@ -25,16 +26,7 @@ const SILENCE_TIMEOUT_MS = 1000;
 const MAX_RECORDING_MS = 15000;
 const MIN_RECORDING_MS = 500;
 const LISTEN_RESUME_DELAY_MS = 700;
-const IMAGE_REQUEST_KEYWORDS = [
-  "desenhe",
-  "desenha",
-  "desenhar",
-  "foto",
-  "imagem",
-  "ilustracao",
-  "ilustre",
-  "pinte",
-];
+const MAX_HISTORY_ITEMS = 50;
 
 type HealthStatus = "checking" | "online" | "offline";
 type MobileInteractionState =
@@ -56,30 +48,21 @@ function getApiPingIntervalMs(): number {
   return intervalSeconds * 1000;
 }
 
-function shouldShowImageLoadingPlaceholder(text: string): boolean {
-  const normalizedText = text
-    .toLocaleLowerCase("pt-BR")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-
-  return IMAGE_REQUEST_KEYWORDS.some((keyword) => normalizedText.includes(keyword));
-}
-
 export function MobileApp() {
   const [expression, setExpression] = useState<RobotExpression>("idle");
   const [interactionState, setInteractionState] = useState<MobileInteractionState>("idle");
   const [lowerPanelContent, setLowerPanelContent] = useState<LowerPanelContent>({
     mode: "text",
-    text: "Oi! Eu sou o Cubinho. Pode falar comigo.",
+    text: "Oi! Eu sou o Cubinho. Toque no microfone para falar comigo.",
   });
-  const [inputText, setInputText] = useState("");
   const [healthStatus, setHealthStatus] = useState<HealthStatus>("checking");
   const [showHealthLabel, setShowHealthLabel] = useState(false);
   const [isAudioSpeaking, setIsAudioSpeaking] = useState(false);
-  const [isSending, setIsSending] = useState(false);
   const [isVoiceBusy, setIsVoiceBusy] = useState(false);
   const [isVoiceRecording, setIsVoiceRecording] = useState(false);
-  const [isListenerModeEnabled, setIsListenerModeEnabled] = useState(false);
+  const [history, setHistory] = useState<InteractionHistoryItem[]>([]);
+  const [isHistoryVisible, setIsHistoryVisible] = useState(false);
+  const [isAnswerBoxVisible, setIsAnswerBoxVisible] = useState(true);
 
   const activeRecordingListenerModeRef = useRef(false);
   const audioBaseExpressionRef = useRef<RobotExpression>("idle");
@@ -117,7 +100,6 @@ export function MobileApp() {
 
   const setListenerModeState = useCallback((value: boolean) => {
     isListenerModeEnabledRef.current = value;
-    setIsListenerModeEnabled(value);
   }, []);
 
   const clearListenerResumeTimer = useCallback(() => {
@@ -168,8 +150,31 @@ export function MobileApp() {
     return;
   });
 
+  const recordHistory = useCallback((response: TextInteractionResponse) => {
+    const question = response.input_text.trim();
+    const answer = response.assistant_text.trim();
+    const imageUrl = response.image?.image_url ?? undefined;
+    if (!question && !answer && !imageUrl) {
+      return;
+    }
+
+    setHistory((previous) =>
+      [
+        {
+          id: response.interaction_id,
+          question,
+          answer,
+          imageUrl,
+        },
+        ...previous,
+      ].slice(0, MAX_HISTORY_ITEMS)
+    );
+  }, []);
+
   const displayInteractionResponse = useCallback(
     (response: TextInteractionResponse, resumeListenerAfterResponse: boolean) => {
+      recordHistory(response);
+
       if (response.image?.image_url) {
         setLowerPanelContent({ mode: "image", imageUrl: response.image.image_url });
       } else if (response.assistant_text.trim()) {
@@ -201,7 +206,7 @@ export function MobileApp() {
         scheduleListenerResumeRef.current();
       }
     },
-    []
+    [recordHistory]
   );
 
   const discardOrResumeListener = useCallback(() => {
@@ -216,42 +221,31 @@ export function MobileApp() {
     }
   }, [setVoiceBusyState, setVoiceRecordingState]);
 
-  const handleVoiceActivityEvent = useCallback(
-    (event: VoiceActivityEvent) => {
-      if (event.type === "speech_start") {
-        speechDetectedRef.current = true;
-        if (activeRecordingListenerModeRef.current) {
-          setInteractionState("listener_on_hearing");
-        }
-        return;
+  const handleVoiceActivityEvent = useCallback((event: VoiceActivityEvent) => {
+    if (event.type === "speech_start") {
+      speechDetectedRef.current = true;
+      if (activeRecordingListenerModeRef.current) {
+        setInteractionState("listener_on_hearing");
       }
+      return;
+    }
 
-      if (event.type === "silence") {
-        void finishVoiceRecordingRef.current("silence", true);
-        return;
-      }
+    if (event.type === "silence") {
+      void finishVoiceRecordingRef.current("silence", true);
+      return;
+    }
 
-      if (event.type === "max_duration") {
-        const shouldSend =
-          !activeRecordingListenerModeRef.current || speechDetectedRef.current;
-        void finishVoiceRecordingRef.current("max_duration", shouldSend);
-        return;
-      }
+    if (event.type === "max_duration") {
+      const shouldSend =
+        !activeRecordingListenerModeRef.current || speechDetectedRef.current;
+      void finishVoiceRecordingRef.current("max_duration", shouldSend);
+      return;
+    }
 
-      if (event.type === "metering_unavailable") {
-        console.warn("Voice metering is unavailable; manual stop fallback is active.");
-        if (activeRecordingListenerModeRef.current) {
-          void finishVoiceRecordingRef.current("manual", false);
-          setListenerModeState(false);
-          setLowerPanelContent({
-            mode: "text",
-            text: "Modo ouvinte automático indisponível neste dispositivo. Use Falar.",
-          });
-        }
-      }
-    },
-    [setListenerModeState]
-  );
+    if (event.type === "metering_unavailable") {
+      console.warn("Voice metering is unavailable; manual stop fallback is active.");
+    }
+  }, []);
 
   const startVoiceRecording = useCallback(
     async (listenerMode: boolean) => {
@@ -373,6 +367,8 @@ export function MobileApp() {
         displayInteractionResponse(response, listenerMode && isListenerModeEnabledRef.current);
       } catch (error) {
         console.warn("Audio interaction failed:", error);
+        clearListenerResumeTimer();
+        pendingListenerResumeAfterPlaybackRef.current = false;
         setVoiceBusyState(false);
         setVoiceRecordingState(false);
         if (listenerMode) {
@@ -380,9 +376,13 @@ export function MobileApp() {
         }
         setExpression("error");
         setInteractionState("idle");
+        const message =
+          error instanceof AudioInteractionError && error.detail
+            ? error.detail
+            : "Não consegui enviar o áudio agora.";
         setLowerPanelContent({
           mode: "error",
-          message: "Não consegui enviar o áudio agora.",
+          message,
         });
       } finally {
         finishingRecordingRef.current = false;
@@ -390,6 +390,7 @@ export function MobileApp() {
     },
     [
       discardOrResumeListener,
+      clearListenerResumeTimer,
       displayInteractionResponse,
       setListenerModeState,
       setVoiceBusyState,
@@ -452,32 +453,6 @@ export function MobileApp() {
     showTemporaryHealthLabel();
   }, [refreshHealth, showTemporaryHealthLabel]);
 
-  const stopListenerCapture = useCallback(async () => {
-    clearListenerResumeTimer();
-    voiceActivityService.stop();
-    await audioRecorderService.release();
-    setVoiceBusyState(false);
-    setVoiceRecordingState(false);
-    setInteractionState("idle");
-    setExpression("idle");
-  }, [clearListenerResumeTimer, setVoiceBusyState, setVoiceRecordingState]);
-
-  const handleToggleListenerMode = useCallback(
-    (value: boolean) => {
-      setListenerModeState(value);
-
-      if (value) {
-        if (!isVoiceBusyRef.current && !isAudioSpeakingRef.current) {
-          void startVoiceRecordingRef.current(true);
-        }
-        return;
-      }
-
-      void stopListenerCapture();
-    },
-    [setListenerModeState, stopListenerCapture]
-  );
-
   const handleVoicePress = useCallback(() => {
     if (isVoiceRecordingRef.current) {
       void finishVoiceRecordingRef.current("manual", true);
@@ -487,69 +462,11 @@ export function MobileApp() {
     void startVoiceRecording(false);
   }, [startVoiceRecording]);
 
-  const handleSend = useCallback(async () => {
-    const text = inputText.trim();
-    if (!text || isSending || isVoiceBusyRef.current) {
-      return;
-    }
-
-    clearListenerResumeTimer();
-    if (isVoiceRecordingRef.current) {
-      await stopListenerCapture();
-    }
-
-    setIsSending(true);
-    shouldRestoreAudioExpressionRef.current = false;
-    pendingListenerResumeAfterPlaybackRef.current = false;
-    audioPlayerService.stop();
-    isAudioSpeakingRef.current = false;
-    setIsAudioSpeaking(false);
-    setExpression("thinking");
-    setInteractionState("thinking");
-    setLowerPanelContent(
-      shouldShowImageLoadingPlaceholder(text) ? { mode: "loading_image" } : { mode: "empty" }
-    );
-    setInputText("");
-
-    try {
-      const response = await sendTextInteraction({
-        text,
-        session_id: SESSION_ID,
-        client_type: "mobile",
-        generate_audio: true,
-        metadata: {
-          device_id: DEVICE_ID,
-          locale: "pt-BR",
-        },
-      });
-      displayInteractionResponse(response, isListenerModeEnabledRef.current);
-    } catch {
-      setLowerPanelContent({
-        mode: "error",
-        message: "Não consegui falar com o servidor agora.",
-      });
-      setExpression("error");
-      setInteractionState("error");
-      setHealthStatus("offline");
-    } finally {
-      setIsSending(false);
-    }
-  }, [
-    clearListenerResumeTimer,
-    displayInteractionResponse,
-    inputText,
-    isSending,
-    stopListenerCapture,
-  ]);
-
   return (
     <SafeAreaProvider>
       <SafeAreaView style={styles.safeArea}>
         <StatusBar hidden />
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={styles.keyboardView}
-        >
+        <View style={styles.content}>
           <View style={styles.faceArea}>
             <RobotFace expression={expression} is_speaking={isAudioSpeaking} />
           </View>
@@ -557,13 +474,9 @@ export function MobileApp() {
             content={lowerPanelContent}
             healthLabel={healthLabel}
             healthStatus={healthStatus}
-            inputText={inputText}
             interactionState={interactionState}
-            isListenerModeEnabled={isListenerModeEnabled}
-            isSending={isSending}
             isVoiceBusy={isVoiceBusy || isAudioSpeaking}
             isVoiceRecording={isVoiceRecording}
-            onChangeInput={setInputText}
             onImageError={() => {
               setLowerPanelContent({
                 mode: "error",
@@ -572,19 +485,19 @@ export function MobileApp() {
               setExpression("error");
               setInteractionState("error");
             }}
+            onOpenHistory={() => setIsHistoryVisible(true)}
             onRefreshHealth={handleRefreshHealthPress}
-            onSend={handleSend}
-            onToggleListenerMode={handleToggleListenerMode}
+            onToggleContent={() => setIsAnswerBoxVisible((previous) => !previous)}
             onVoicePress={handleVoicePress}
+            showContent={isAnswerBoxVisible}
             showHealthLabel={showHealthLabel}
-            onInputFocus={() => setExpression("listening")}
-            onInputBlur={() => {
-              if (!isSending && expression === "listening") {
-                setExpression("idle");
-              }
-            }}
           />
-        </KeyboardAvoidingView>
+        </View>
+        <InteractionHistory
+          items={history}
+          onClose={() => setIsHistoryVisible(false)}
+          visible={isHistoryVisible}
+        />
       </SafeAreaView>
     </SafeAreaProvider>
   );
@@ -595,7 +508,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#06151f",
   },
-  keyboardView: {
+  content: {
     flex: 1,
   },
   faceArea: {
