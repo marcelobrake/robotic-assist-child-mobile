@@ -2,12 +2,11 @@ import {
   Image,
   Pressable,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
 } from "react-native";
-
-import type { RobotExpression } from "../types/robotEvents";
 
 export type LowerPanelContent =
   | { mode: "empty" }
@@ -18,36 +17,47 @@ export type LowerPanelContent =
 
 type LowerPanelProps = {
   content: LowerPanelContent;
-  expression: RobotExpression;
   healthLabel: string;
   healthStatus: "checking" | "online" | "offline";
   inputText: string;
   isSending: boolean;
+  isVoiceBusy: boolean;
+  isVoiceRecording: boolean;
+  isListenerModeEnabled: boolean;
+  interactionState: string;
   onChangeInput: (value: string) => void;
   onInputBlur: () => void;
   onInputFocus: () => void;
   onImageError?: () => void;
   onRefreshHealth: () => void;
   onSend: () => void;
+  onToggleListenerMode: (value: boolean) => void;
+  onVoicePress: () => void;
   showHealthLabel: boolean;
 };
 
 export function LowerPanel({
   content,
-  expression,
   healthLabel,
   healthStatus,
   inputText,
   isSending,
+  isVoiceBusy,
+  isVoiceRecording,
+  isListenerModeEnabled,
+  interactionState,
   onChangeInput,
   onInputBlur,
   onInputFocus,
   onImageError,
   onRefreshHealth,
   onSend,
+  onToggleListenerMode,
+  onVoicePress,
   showHealthLabel,
 }: LowerPanelProps) {
   const canSend = inputText.trim().length > 0 && !isSending;
+  const voiceButtonLabel = isVoiceRecording ? "Parar" : "Falar";
 
   return (
     <View style={styles.panel}>
@@ -61,7 +71,7 @@ export function LowerPanel({
           <View style={[styles.statusDot, statusDotStyle[healthStatus]]} />
           {showHealthLabel ? <Text style={styles.statusText}>{healthLabel}</Text> : null}
         </Pressable>
-        <Text style={styles.expressionText}>{expression}</Text>
+        <Text style={styles.expressionText}>{interactionState}</Text>
       </View>
 
       <View
@@ -73,11 +83,37 @@ export function LowerPanel({
         {renderContent(content, onImageError)}
       </View>
 
+      <View style={styles.voiceControlsRow}>
+        <View style={styles.listenerModeControl}>
+          <Text style={styles.listenerModeText}>Modo ouvinte</Text>
+          <Switch
+            accessibilityLabel="Modo ouvinte"
+            onValueChange={onToggleListenerMode}
+            thumbColor={isListenerModeEnabled ? "#30d158" : "#d9f6ff"}
+            trackColor={{ false: "#24475a", true: "#1f7f42" }}
+            value={isListenerModeEnabled}
+          />
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          disabled={isVoiceBusy && !isVoiceRecording}
+          onPress={onVoicePress}
+          style={({ pressed }) => [
+            styles.voiceButton,
+            isVoiceRecording ? styles.voiceButtonRecording : null,
+            isVoiceBusy && !isVoiceRecording ? styles.voiceButtonDisabled : null,
+            pressed ? styles.voiceButtonPressed : null,
+          ]}
+        >
+          <Text style={styles.voiceButtonText}>{voiceButtonLabel}</Text>
+        </Pressable>
+      </View>
+
       <View style={styles.inputRow}>
         <TextInput
           accessibilityLabel="Mensagem para o Cubinho"
           autoCapitalize="sentences"
-          editable={!isSending}
+          editable={!isSending && !isVoiceBusy}
           onBlur={onInputBlur}
           onChangeText={onChangeInput}
           onFocus={onInputFocus}
@@ -237,6 +273,53 @@ const styles = StyleSheet.create({
     color: "#ffd4d4",
     fontSize: 17,
     lineHeight: 24,
+  },
+  voiceControlsRow: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  listenerModeControl: {
+    flex: 1,
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#24475a",
+    backgroundColor: "#06151f",
+    paddingHorizontal: 12,
+  },
+  listenerModeText: {
+    color: "#d9f6ff",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  voiceButton: {
+    width: 82,
+    minHeight: 44,
+    borderRadius: 8,
+    backgroundColor: "#8bd8ff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  voiceButtonRecording: {
+    backgroundColor: "#ff453a",
+  },
+  voiceButtonDisabled: {
+    backgroundColor: "#315263",
+  },
+  voiceButtonPressed: {
+    opacity: 0.82,
+  },
+  voiceButtonText: {
+    color: "#06151f",
+    fontSize: 15,
+    fontWeight: "700",
   },
   inputRow: {
     minHeight: 52,

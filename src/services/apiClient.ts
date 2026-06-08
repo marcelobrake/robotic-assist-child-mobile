@@ -1,6 +1,7 @@
 import type {
   HealthResponse,
   RobotExpression,
+  TextInteractionAudio,
   TextInteractionImage,
   TextInteractionRequest,
   TextInteractionResponse,
@@ -10,6 +11,10 @@ const DEFAULT_API_BASE_URL = "http://localhost:8080";
 
 const apiBaseUrl =
   process.env.EXPO_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? DEFAULT_API_BASE_URL;
+
+export function getApiBaseUrl(): string {
+  return apiBaseUrl;
+}
 
 function normalizeExpression(value: unknown): RobotExpression {
   const allowed: RobotExpression[] = [
@@ -27,6 +32,20 @@ function normalizeExpression(value: unknown): RobotExpression {
 
 function readString(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
+}
+
+function readNullableString(value: unknown): string | null | undefined {
+  if (typeof value === "string" || value === null) {
+    return value;
+  }
+  return undefined;
+}
+
+function readNullableNumber(value: unknown): number | null | undefined {
+  if (typeof value === "number" || value === null) {
+    return value;
+  }
+  return undefined;
 }
 
 function parseTextInteractionImage(
@@ -57,6 +76,32 @@ function parseTextInteractionImage(
   };
 }
 
+function parseTextInteractionAudio(
+  value: unknown,
+  fallbackCreatedAt: string
+): TextInteractionAudio | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const audio = value as Record<string, unknown>;
+  const audioUrl = readString(audio.audio_url);
+  if (!audioUrl) {
+    return null;
+  }
+
+  return {
+    audio_id: readString(audio.audio_id),
+    audio_url: audioUrl,
+    content_type: readString(audio.content_type, "audio/*"),
+    duration_ms: readNullableNumber(audio.duration_ms),
+    provider: readString(audio.provider),
+    model: readNullableString(audio.model),
+    created_at: readString(audio.created_at, fallbackCreatedAt),
+    expires_at: readNullableString(audio.expires_at),
+  };
+}
+
 async function parseJson<T>(response: Response): Promise<T> {
   const body = (await response.json()) as T;
   if (!response.ok) {
@@ -65,9 +110,40 @@ async function parseJson<T>(response: Response): Promise<T> {
   return body;
 }
 
+export function parseInteractionResponse(
+  body: Record<string, unknown>,
+  fallbackSessionId: string,
+  assistantTextFallback = ""
+): TextInteractionResponse {
+  const assistantText =
+    typeof body.assistant_text === "string"
+      ? body.assistant_text
+      : typeof body.response_text === "string"
+        ? body.response_text
+        : assistantTextFallback;
+  const createdAt =
+    typeof body.created_at === "string" ? body.created_at : new Date().toISOString();
+  const image = parseTextInteractionImage(body.image, createdAt);
+  const audio = parseTextInteractionAudio(body.audio, createdAt);
+
+  return {
+    interaction_id:
+      typeof body.interaction_id === "string" ? body.interaction_id : "interaction_local",
+    session_id:
+      typeof body.session_id === "string" ? body.session_id : fallbackSessionId,
+    status: typeof body.status === "string" ? body.status : "accepted",
+    assistant_text: assistantText,
+    expression: normalizeExpression(body.expression),
+    intent: typeof body.intent === "string" ? body.intent : "chat",
+    image,
+    audio,
+    created_at: createdAt,
+  };
+}
+
 export async function checkHealth(): Promise<boolean> {
   try {
-    const response = await fetch(`${apiBaseUrl}/v1/health/live`);
+    const response = await fetch(`${getApiBaseUrl()}/v1/health/live`);
     const body = await parseJson<HealthResponse>(response);
     return body.status === "ok";
   } catch {
@@ -78,7 +154,7 @@ export async function checkHealth(): Promise<boolean> {
 export async function sendTextInteraction(
   request: TextInteractionRequest
 ): Promise<TextInteractionResponse> {
-  const response = await fetch(`${apiBaseUrl}/v1/interactions/text`, {
+  const response = await fetch(`${getApiBaseUrl()}/v1/interactions/text`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -86,6 +162,7 @@ export async function sendTextInteraction(
     body: JSON.stringify({
       session_id: request.session_id,
       client_type: request.client_type,
+      generate_audio: request.generate_audio ?? true,
       text: request.text,
       input_text: request.text,
       metadata: request.metadata,
@@ -93,26 +170,5 @@ export async function sendTextInteraction(
   });
   const body = await parseJson<Record<string, unknown>>(response);
 
-  const assistantText =
-    typeof body.assistant_text === "string"
-      ? body.assistant_text
-      : typeof body.response_text === "string"
-        ? body.response_text
-        : "Recebi sua mensagem.";
-  const createdAt =
-    typeof body.created_at === "string" ? body.created_at : new Date().toISOString();
-  const image = parseTextInteractionImage(body.image, createdAt);
-
-  return {
-    interaction_id:
-      typeof body.interaction_id === "string" ? body.interaction_id : "interaction_local",
-    session_id:
-      typeof body.session_id === "string" ? body.session_id : request.session_id,
-    status: typeof body.status === "string" ? body.status : "accepted",
-    assistant_text: assistantText,
-    expression: normalizeExpression(body.expression),
-    intent: typeof body.intent === "string" ? body.intent : "chat",
-    image,
-    created_at: createdAt,
-  };
+  return parseInteractionResponse(body, request.session_id, "Recebi sua mensagem.");
 }

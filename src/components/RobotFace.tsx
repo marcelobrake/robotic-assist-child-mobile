@@ -6,14 +6,24 @@ import { RobotMouth } from "./RobotMouth";
 
 type RobotFaceProps = {
   expression: RobotExpression;
+  is_speaking?: boolean;
+  mouth_open_level?: number;
 };
 
-export function RobotFace({ expression }: RobotFaceProps) {
+export function RobotFace({
+  expression,
+  is_speaking = false,
+  mouth_open_level,
+}: RobotFaceProps) {
   return (
     <View style={[styles.shell, shellStyleByExpression[expression]]}>
       <View style={styles.screen}>
         <RobotEyes expression={expression} />
-        <RobotMouth expression={expression} />
+        <RobotMouth
+          expression={expression}
+          is_speaking={is_speaking}
+          mouth_open_level={mouth_open_level}
+        />
       </View>
     </View>
   );

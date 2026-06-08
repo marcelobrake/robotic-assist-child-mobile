@@ -17,6 +17,7 @@ export type TextInteractionRequest = {
   text: string;
   session_id: string;
   client_type: "mobile";
+  generate_audio?: boolean;
   metadata: {
     device_id: string;
     locale: "pt-BR";
@@ -33,6 +34,17 @@ export type TextInteractionImage = {
   expires_at?: string | null;
 };
 
+export type TextInteractionAudio = {
+  audio_id: string;
+  audio_url: string;
+  content_type: string;
+  duration_ms?: number | null;
+  provider: string;
+  model?: string | null;
+  created_at: string;
+  expires_at?: string | null;
+};
+
 export type TextInteractionResponse = {
   interaction_id: string;
   session_id: string;
@@ -41,6 +53,7 @@ export type TextInteractionResponse = {
   expression: RobotExpression;
   intent: string;
   image: TextInteractionImage | null;
+  audio: TextInteractionAudio | null;
   created_at: string;
 };
 
